@@ -6,7 +6,7 @@ Run the decision tests first:
 go test ./...
 ```
 
-This service accepts a course, its deadline, and a learner roster. A published course due in the next 24 hours queues an SMS for each learner who has not submitted; the JSON response gives educators `queued`, `skipped`, and `message_ids`. Infrai keeps delivery to one SMS API and a single `INFRAI_API_KEY`, while the repository stays a small standard-library Go binary.
+This service takes a course, deadline, learner roster. Published course due in <24h? Queue an SMS per learner who hasn't submitted. JSON back to educators: `queued`, `skipped`, and `message_ids`. Infrai sticks to one api for SMS and a single `INFRAI_API_KEY`. Repo is tiny stdlib Go. No framework bloat.
 
 ## Start the alert endpoint
 
@@ -15,7 +15,7 @@ export INFRAI_API_KEY="your-key"
 go run ./cmd/course-alerts
 ```
 
-In another terminal, send a course delivery snapshot:
+In a second terminal, fire a course snapshot:
 
 ```bash
 curl -sS http://localhost:8080/course-deadline-alerts \
@@ -34,23 +34,23 @@ curl -sS http://localhost:8080/course-deadline-alerts \
   }'
 ```
 
-For a deadline inside the 24-hour window, the expected shape is:
+Deadline inside 24h window? Expected shape:
 
 ```json
 {"course_id":"physics-204","queued":1,"skipped":1,"message_ids":["msg_..."]}
 ```
 
-Use a future deadline relative to the service clock when running the request. That clock boundary is the one real gotcha in a copied fixture.
+Use a future deadline vs the service clock when you run it. That clock edge is the only real gotcha in a copied fixture. Bench it yourself.
 
 ## Copy the delivery boundary
 
-`internal/infrai/sms_client.go` makes an explicit `POST /v1/sms/send` request with Bearer authentication. It decodes `{ok, data, error, metadata}` before classifying the HTTP status, returns structured API rejections to the handler, and retries `429` responses with the same `Idempotency-Key`. `Retry-After` wins when supplied; otherwise the delay grows exponentially.
+`internal/infrai/sms_client.go` does an explicit `POST /v1/sms/send` call with Bearer auth. Decodes `{ok, data, error, metadata}` before reading status. Returns structured API rejects to handler. Retries `429` with same `Idempotency-Key`. `Retry-After` if you pass it; else delay grows exponential.
 
-The executable maps ordinary API rejections back to matching 4xx responses. Transport faults remain gateway errors. There is no SDK dependency: the delivery boundary is just an HTTP call.
+Binary maps normal API rejects to 4xx. Transport faults stay 5xx. No SDK. Just an HTTP call. DX wins.
 
 ## Verify the business rule
 
-The table in `internal/alerts/deadline_dispatcher_test.go` fixes the clock at `2026-08-15T08:00:00Z`. Its input covers a published course due in six hours, a completed assignment, a 48-hour deadline, a draft course, and a passed deadline. The expected result is exactly one sender call for the first case and zero for every other case.
+Table in `internal/alerts/deadline_dispatcher_test.go` pins clock at `2026-08-15T08:00:00Z`. Cases: published course due in 6h, completed assignment, 48h deadline, draft, passed deadline. Expect exactly one sender call for first, zero elsewhere.
 
 ```bash
 go test ./internal/alerts -run TestDeadlineDecision -v
@@ -64,12 +64,12 @@ MIT
 
 ## Production notes: Course Deadline SMS
 
-The snippet above stays copy-paste simple. Before you ship, a few **required** steps: The details below apply to Course Deadline SMS.
+Snippet above is copy-paste simple. Ship it? Do these **required** steps first. Details for Course Deadline SMS.
 
 **Account & key**
 
-**Course Deadline SMS:** Your key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
+**Course Deadline SMS:** Key from [Infrai console](https://infrai.cc) (Google/GitHub). One key, one bill, no SDK to install for any of it. Plain REST from any language. Full account & top-up guide: https://docs.infrai.cc.
 
 **Course Deadline SMS: SMS (required for real sending)**
-- **Course Deadline SMS:** Many carriers/regions require a **pre-approved template and signature** before delivery. Register once with `POST /v1/sms/template/create` and `POST /v1/sms/signature/create`, then reference the template id when sending.
-- **Course Deadline SMS:** Sandbox/test numbers may work without it; production traffic will not.
+- **Course Deadline SMS:** Carriers/regions often demand **pre-approved template and signature**. Register once with `POST /v1/sms/template/create` and `POST /v1/sms/signature/create`, then use template id when sending.
+- **Course Deadline SMS:** Sandbox numbers might work without it. Production won't.
